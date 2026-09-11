@@ -1,0 +1,26 @@
+# Runtime data — this app moves/creates real video files here, never commit them
+video-pipeline/
+test_run/
+*.mp4
+*.mkv
+*.mov
+*.wav
+*.srt
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# Local config (copy from config.example.yaml)
+config.yaml
+
+# Logs
+logs/
+*.log
+
+# Whisper model cache (downloaded at runtime)
+.cache/
+models/

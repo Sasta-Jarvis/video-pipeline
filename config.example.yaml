@@ -1,0 +1,119 @@
+# Video pipeline configuration.
+#
+# Copy this file to config.yaml and edit it. config.yaml is gitignored so your
+# local paths/secrets never get committed. Every value here has a sensible
+# default in code, so you only need to override what you care about.
+
+paths:
+  # Base directory containing speech/racing/output/failed/processing.
+  # Relative paths are resolved against the current working directory.
+  root: "./video-pipeline"
+
+  # Individual folders default to <root>/<name> — override any of them
+  # independently if you want the inputs/outputs somewhere else entirely.
+  speech_dir: null
+  racing_dir: null
+  output_dir: null
+  failed_dir: null
+  processing_dir: null
+
+  # SQLite job-state database. Defaults to <root>/state.db
+  state_db: null
+
+  # Log files. Defaults to <root>/logs
+  log_dir: null
+
+watcher:
+  # How often (seconds) to fall back to a full directory scan, in addition
+  # to the real-time watchdog events. Catches anything the OS-level watcher
+  # missed (e.g. files copied while the app was offline).
+  poll_interval_seconds: 5
+
+  # A file must not change size for this many seconds before we treat it as
+  # "fully written". Prevents grabbing a video that's still being copied in.
+  stable_wait_seconds: 5
+
+  # Extensions considered valid input videos.
+  video_extensions: [".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v"]
+
+whisper:
+  # "auto" picks a model based on detected hardware (see hw_detect.py).
+  # Or force one of: tiny, base, small, medium, large-v2, large-v3, distil-large-v3
+  model: "auto"
+
+  # "auto" picks cuda if available, else cpu.
+  device: "auto"
+
+  # "auto" picks float16 on GPU, int8 on CPU.
+  compute_type: "auto"
+
+  # null = auto-detect language from audio. Set e.g. "en" to force it (faster).
+  language: null
+
+  beam_size: 5
+  vad_filter: true
+
+subtitles:
+  enabled: true
+  burn_in: true
+  keep_srt: true
+
+  # Line wrapping for readability.
+  max_chars_per_line: 42
+  max_lines_per_cue: 2
+  max_cue_duration_seconds: 6.0
+
+  # Burned-in subtitle style (libass force_style, ASS color format &HAABBGGRR).
+  font_name: "Arial"
+  font_size: 28
+  primary_color: "&H00FFFFFF"    # white text
+  outline_color: "&H00000000"    # black outline
+  back_color: "&H80000000"       # semi-transparent box behind text
+  bold: true
+  outline_width: 2
+  shadow: 0
+  # 2 = bottom-center (libass \an alignment values)
+  alignment: 2
+  margin_v: 60
+
+video:
+  # "auto" picks h264_nvenc if an NVIDIA GPU + nvenc-capable ffmpeg build is
+  # detected, else falls back to libx264 (software).
+  codec: "auto"
+
+  # x264/x265 preset, or nvenc preset (p1-p7 / fast/medium/slow depending on
+  # ffmpeg build). Ignored fields for the codec actually chosen are skipped.
+  preset: "veryfast"
+
+  # Constant quality. Lower = better quality/bigger file. ~18-23 is typical
+  # for YouTube uploads with libx264.
+  crf: 20
+
+  # Output resolution as "WIDTHxHEIGHT", or null to keep the racing
+  # footage's native resolution.
+  resolution: "1920x1080"
+
+  fps: 60
+  pixel_format: "yuv420p"
+
+audio:
+  codec: "aac"
+  bitrate: "192k"
+  sample_rate: 48000
+
+racing:
+  # Method used to extend a racing clip shorter than the speech track.
+  # "concat_loop" repeats the whole clip end-to-end via ffmpeg's concat
+  # demuxer with stream copy (fast, lossless, no re-encode).
+  loop_method: "concat_loop"
+
+output:
+  container: "mp4"
+  filename_template: "{job_id}.mp4"
+  # Also copy the final .srt next to the .mp4 with a matching name.
+  keep_srt_in_output: true
+
+logging:
+  level: "INFO"
+  max_bytes: 5242880
+  backup_count: 5

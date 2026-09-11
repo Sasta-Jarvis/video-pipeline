@@ -1,0 +1,10 @@
+# Core orchestration
+PyYAML>=6.0.1
+watchdog>=4.0.0
+
+# Transcription (CPU or CUDA backend chosen automatically via ctranslate2)
+faster-whisper>=1.0.3
+
+# faster-whisper pulls these in transitively, pinned here for clarity/reproducibility
+av>=11.0.0
+ctranslate2>=4.0.0
