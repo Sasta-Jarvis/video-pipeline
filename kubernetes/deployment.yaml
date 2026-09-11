@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: video-pipeline
+  labels:
+    app.kubernetes.io/name: video-pipeline
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: video-pipeline
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: video-pipeline
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: video-pipeline
+          image: 127.0.0.1:5000/video-pipeline-dev:bootstrap
+          imagePullPolicy: IfNotPresent
+          env:
+            # No non-root user is baked into the image, so $HOME is
+            # otherwise unset for an arbitrary UID; faster-whisper/huggingface
+            # resolve their model cache under $HOME/.cache, so this both
+            # makes that resolution work and persists downloaded models
+            # across restarts via the /data volume.
+            - name: HOME
+              value: /data
+          ports:
+            - {name: http, containerPort: 8080}
+          readinessProbe:
+            httpGet: {path: /, port: http}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /, port: http}
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 250m, memory: 512Mi}
+            limits: {cpu: "2", memory: 4Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - {name: data, mountPath: /data}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: video-pipeline-data
+        - name: tmp
+          emptyDir: {}

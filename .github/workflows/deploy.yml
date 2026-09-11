@@ -1,0 +1,64 @@
+name: Deploy k3s development
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/deploy.yml"
+      - "Dockerfile"
+      - "requirements.txt"
+      - "src/**"
+      - "webapp/**"
+      - "config.docker.yaml"
+      - "kubernetes/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: video-pipeline-development
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, linux, home-cluster]
+    environment: development
+    timeout-minutes: 30
+    env:
+      KUBECONFIG: /opt/home-cluster/video-pipeline-dev-kubeconfig
+      IMAGE: 127.0.0.1:5000/video-pipeline-dev
+      NAMESPACE: video-pipeline-dev
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build immutable image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --tag "${IMAGE}:git-${GITHUB_SHA}" .
+          docker push "${IMAGE}:git-${GITHUB_SHA}"
+
+      - name: Deploy and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          rendered="$(mktemp)"
+          trap 'rm -f "$rendered"' EXIT
+          kubectl kustomize kubernetes >"$rendered"
+          sed -i "s|${IMAGE}:bootstrap|${IMAGE}:git-${GITHUB_SHA}|g" "$rendered"
+          kubectl apply --namespace "$NAMESPACE" -f "$rendered"
+          kubectl rollout status deployment/video-pipeline \
+            --namespace "$NAMESPACE" --timeout=600s
+          source /opt/home-cluster/environment
+          : "${TAILSCALE_IPV4:?TAILSCALE_IPV4 is required}"
+          curl --fail --retry 24 --retry-delay 5 --retry-all-errors \
+            "http://${TAILSCALE_IPV4}:30230/"
+
+      - name: Namespace diagnostics on failure
+        if: failure()
+        shell: bash
+        run: |
+          kubectl get all --namespace "$NAMESPACE" -o wide || true
+          kubectl describe pods --namespace "$NAMESPACE" || true
+          kubectl logs deployment/video-pipeline --namespace "$NAMESPACE" --tail=150 || true
