@@ -1,0 +1,7 @@
+# Config used inside the Docker image. Everything else defaults the same
+# way config.example.yaml documents (whisper model/device/codec all "auto",
+# resolved from the hardware detected *inside the container* at startup).
+# The only override needed here is paths.root -> /data, the mounted volume,
+# so uploads/output survive container restarts and rebuilds.
+paths:
+  root: "/data"

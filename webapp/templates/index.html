@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Video Pipeline</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; max-width: 900px; margin: 0 auto; padding: 24px 16px; background: #f7f7f8; color: #1a1a1a; }
+  @media (prefers-color-scheme: dark) { body { background: #16171a; color: #eaeaea; } .card { background: #202124 !important; border-color: #333 !important; } table { color: #eaeaea; } th { color: #999 !important; } }
+  h1 { font-size: 1.4rem; margin-bottom: 4px; }
+  .sub { color: #777; font-size: 0.85rem; margin-bottom: 24px; }
+  .card { background: #fff; border: 1px solid #e2e2e2; border-radius: 10px; padding: 20px; margin-bottom: 20px; }
+  .upload-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+  .upload-field { flex: 1; min-width: 220px; }
+  .upload-field label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; }
+  input[type=file] { width: 100%; font-size: 0.85rem; }
+  button { background: #4f46e5; color: #fff; border: none; padding: 10px 18px; border-radius: 6px; font-size: 0.9rem; cursor: pointer; }
+  button:hover { background: #4338ca; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #eee; vertical-align: top; }
+  th { color: #777; font-weight: 600; font-size: 0.75rem; text-transform: uppercase; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.72rem; font-weight: 600; }
+  .badge-pending { background: #fef3c7; color: #92400e; }
+  .badge-processing { background: #dbeafe; color: #1e40af; }
+  .badge-completed { background: #d1fae5; color: #065f46; }
+  .badge-failed { background: #fee2e2; color: #991b1b; }
+  .stage { color: #999; font-size: 0.75rem; }
+  .err { color: #991b1b; font-size: 0.75rem; max-width: 260px; overflow-wrap: break-word; }
+  a.dl { color: #4f46e5; text-decoration: none; font-weight: 600; }
+  a.dl:hover { text-decoration: underline; }
+  .waiting-note { font-size: 0.8rem; color: #777; margin-top: 6px; }
+  .empty { color: #999; font-size: 0.85rem; padding: 16px 0; text-align: center; }
+  .hw { font-size: 0.75rem; color: #999; line-height: 1.5; }
+</style>
+</head>
+<body>
+  <h1>Video Pipeline</h1>
+  <div class="sub">Drop a speech recording + racing clip below. When both are in, the app pairs, transcribes, and combines them automatically.</div>
+
+  <div class="card">
+    <form id="uploadForm" enctype="multipart/form-data">
+      <div class="upload-row">
+        <div class="upload-field">
+          <label>Speech / commentary video</label>
+          <input type="file" name="speech" accept="video/*">
+        </div>
+        <div class="upload-field">
+          <label>Racing gameplay video</label>
+          <input type="file" name="racing" accept="video/*">
+        </div>
+      </div>
+      <button type="submit">Upload & Queue</button>
+      <span id="uploadStatus" class="waiting-note"></span>
+    </form>
+    <div id="pendingNote" class="waiting-note"></div>
+  </div>
+
+  <div class="card">
+    <h2 style="font-size:1rem;margin-top:0;">Jobs</h2>
+    <table id="jobsTable">
+      <thead>
+        <tr><th>Status</th><th>Speech</th><th>Racing</th><th>Output</th><th>Updated</th></tr>
+      </thead>
+      <tbody id="jobsBody"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="card hw">
+    <strong>Detected hardware:</strong>
+    {{ hardware.os_name }} {{ hardware.os_version }} &middot;
+    Whisper model: {{ hardware.recommended_whisper_model }} ({{ hardware.recommended_whisper_device }}) &middot;
+    Video encoder: {{ hardware.recommended_video_codec }}
+    {% if hardware.gpu_name %} &middot; GPU: {{ hardware.gpu_name }}{% endif %}
+  </div>
+
+<script>
+function badgeClass(status) { return "badge badge-" + status; }
+function fmtTime(ts) { return new Date(ts * 1000).toLocaleTimeString(); }
+
+async function refreshJobs() {
+  const res = await fetch("/api/jobs");
+  const jobs = await res.json();
+  const body = document.getElementById("jobsBody");
+  if (jobs.length === 0) {
+    body.innerHTML = '<tr><td colspan="5" class="empty">No jobs yet. Upload a speech + racing video above.</td></tr>';
+    return;
+  }
+  body.innerHTML = jobs.map(j => {
+    let outCell = "-";
+    if (j.status === "completed" && j.output_path) {
+      const base = j.output_path.replace(/\.mp4$/, "");
+      outCell = `<a class="dl" href="/download/${encodeURIComponent(j.output_path)}">Download MP4</a><br><a class="dl" href="/download/${encodeURIComponent(base + '.srt')}">SRT</a>`;
+    } else if (j.status === "failed") {
+      outCell = `<span class="err">${j.error_message || "See logs"}</span>`;
+    } else {
+      outCell = `<span class="stage">${j.stage || ""}</span>`;
+    }
+    return `<tr>
+      <td><span class="${badgeClass(j.status)}">${j.status}</span></td>
+      <td>${j.speech}</td>
+      <td>${j.racing}</td>
+      <td>${outCell}</td>
+      <td>${fmtTime(j.updated_at)}</td>
+    </tr>`;
+  }).join("");
+}
+
+async function refreshPending() {
+  const res = await fetch("/api/pending");
+  const data = await res.json();
+  const note = document.getElementById("pendingNote");
+  const parts = [];
+  if (data.speech_waiting.length) parts.push(`Speech waiting for a match: ${data.speech_waiting.join(", ")}`);
+  if (data.racing_waiting.length) parts.push(`Racing waiting for a match: ${data.racing_waiting.join(", ")}`);
+  note.textContent = parts.join(" | ");
+}
+
+document.getElementById("uploadForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const status = document.getElementById("uploadStatus");
+  status.textContent = "Uploading...";
+  const data = new FormData(form);
+  const res = await fetch("/upload", { method: "POST", body: data });
+  if (res.ok) {
+    status.textContent = "Uploaded.";
+    form.reset();
+    refreshJobs();
+    refreshPending();
+  } else {
+    status.textContent = "Upload failed.";
+  }
+});
+
+refreshJobs();
+refreshPending();
+setInterval(refreshJobs, 3000);
+setInterval(refreshPending, 3000);
+</script>
+</body>
+</html>

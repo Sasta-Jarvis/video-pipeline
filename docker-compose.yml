@@ -1,0 +1,17 @@
+services:
+  video-pipeline:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+    # Uncomment to use an NVIDIA GPU for faster-whisper/nvenc inside the
+    # container (requires the NVIDIA Container Toolkit on the host):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]

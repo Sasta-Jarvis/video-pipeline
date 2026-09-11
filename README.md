@@ -18,6 +18,38 @@ FINAL VIDEO APPEARS in output/
 Everything runs locally: ffmpeg for media processing, faster-whisper for
 local transcription. No cloud APIs, no uploads.
 
+## Quickest way to run it: Docker + web UI
+
+If you don't want to deal with Python/ffmpeg/DLL issues on your host at
+all, run it in Docker instead — a browser-based upload UI, no CLI, no
+folder-dragging required:
+
+```bash
+docker compose up --build
+```
+
+Then open **http://localhost:8080** in your browser. Upload a speech video
+and a racing video, watch the job status update, and download the result
+when it's done.
+
+This also sidesteps the most common Windows headache with this project:
+**faster-whisper's backend (`ctranslate2`) can fail to load with an
+obscure DLL error on Windows** (usually because the Microsoft Visual C++
+Redistributable isn't installed). Docker runs everything inside a Linux
+container, so that class of error doesn't happen — Python, ffmpeg, and
+every native library are installed fresh and consistently every time,
+regardless of what's on your Windows host.
+
+Requirements: [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+(Windows/Mac) or Docker Engine (Linux). Uploaded/processed files persist in
+a local `./data/` folder next to `docker-compose.yml` (mapped to `/data`
+inside the container), so stopping and restarting the container doesn't
+lose anything.
+
+Have an NVIDIA GPU and want it used inside the container? Install the
+[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html),
+then uncomment the `deploy:` block in `docker-compose.yml`.
+
 ## How it works
 
 1. You drop a speech/commentary video into `video-pipeline/speech/` and a
@@ -173,7 +205,7 @@ automatically (this does require normal internet access once).
 ## Project layout
 
 ```
-video-pipeline-app/
+video-pipeline/
     src/video_pipeline/
         hw_detect.py      # OS/CPU/GPU/CUDA/ffmpeg inspection -> recommendations
         config.py         # config.yaml loading + defaults
@@ -184,7 +216,10 @@ video-pipeline-app/
         pipeline.py        # the 11-step job, error handling, recovery
         watcher.py         # folder watching, stability detection, FIFO pairing
         logging_setup.py   # app + per-job logging
-        main.py            # entrypoint / main loop
+        main.py            # entrypoint / main loop (CLI / folder-watch mode)
+    webapp/
+        server.py          # Flask upload UI, runs the same pipeline in a background thread
+        templates/index.html
     scripts/
         inspect_env.py     # standalone hardware report
         start.sh / start.bat
@@ -192,10 +227,21 @@ video-pipeline-app/
         generate_sample_media.py
         test_media.py / test_subtitles.py / test_transcribe.py
         test_watcher.py / test_pipeline_e2e.py
-    config.example.yaml
+    Dockerfile              # Linux image: ffmpeg + Python deps, no host DLL issues
+    docker-compose.yml
+    config.docker.yaml      # config used inside the container (paths.root -> /data)
+    config.example.yaml     # config used for the CLI / start.sh path
     requirements.txt
     run_tests.sh
 ```
+
+Two ways to run this, same underlying pipeline code either way:
+- **CLI / folder-watch** (`scripts/start.sh` or `start.bat`): drag files into
+  `speech/`/`racing/` folders on disk, `main.py` watches them.
+- **Docker + web UI** (`docker compose up`): upload files through a browser
+  at `localhost:8080`, `webapp/server.py` runs the identical watcher/pipeline
+  logic in a background thread, files just arrive via HTTP upload instead
+  of a drag-and-drop into a folder.
 
 ## Design notes
 
