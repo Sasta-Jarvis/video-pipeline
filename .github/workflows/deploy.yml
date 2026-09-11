@@ -62,3 +62,10 @@ jobs:
           kubectl get all --namespace "$NAMESPACE" -o wide || true
           kubectl describe pods --namespace "$NAMESPACE" || true
           kubectl logs deployment/video-pipeline --namespace "$NAMESPACE" --tail=150 || true
+          echo "--- PVC state ---"
+          kubectl get pvc --namespace "$NAMESPACE" -o wide || true
+          kubectl describe pvc video-pipeline-data --namespace "$NAMESPACE" || true
+          echo "--- local-path-provisioner state ---"
+          kubectl get pods --namespace kube-system -o wide | grep -i local-path || true
+          kubectl describe pods --namespace kube-system -l app=local-path-provisioner || true
+          kubectl logs --namespace kube-system -l app=local-path-provisioner --tail=100 || true
